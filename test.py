@@ -10,7 +10,7 @@ from sklearn.linear_model import LogisticRegression
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.tree import DecisionTreeClassifier
 from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score, confusion_matrix, classification_report
-from imblearn.over_sampling import SMOTE, ADASYN
+from sklearn.utils import resample
 from collections import Counter
 import warnings
 warnings.filterwarnings("ignore")
@@ -22,6 +22,41 @@ st.set_page_config(
     layout="wide",
     initial_sidebar_state="expanded"
 )
+
+# Custom SMOTE-like function using sklearn's resample
+def balance_classes(X, y):
+    """Balance classes using upsampling"""
+    # Combine features and target
+    data = pd.concat([pd.DataFrame(X), pd.Series(y, name='target')], axis=1)
+    
+    # Separate classes
+    class_0 = data[data['target'] == 0]
+    class_1 = data[data['target'] == 1]
+    
+    # Determine majority and minority classes
+    if len(class_0) > len(class_1):
+        majority_class = class_0
+        minority_class = class_1
+        target_count = len(class_0)
+    else:
+        majority_class = class_1
+        minority_class = class_0
+        target_count = len(class_1)
+    
+    # Upsample minority class
+    minority_upsampled = resample(minority_class, 
+                                 replace=True, 
+                                 n_samples=target_count, 
+                                 random_state=42)
+    
+    # Combine majority and upsampled minority
+    balanced_data = pd.concat([majority_class, minority_upsampled])
+    
+    # Separate features and target
+    X_balanced = balanced_data.drop('target', axis=1).values
+    y_balanced = balanced_data['target'].values
+    
+    return X_balanced, y_balanced
 
 # Title and description
 st.title("📊 Digital Marketing Campaign Analysis")
@@ -142,35 +177,24 @@ if uploaded_file is not None:
             if len(skewed_cols) > 0:
                 st.write(f"✅ Applied log transformation to {len(skewed_cols)} skewed features")
             
-            # Apply SMOTE to handle class imbalance
-            st.write("**Class Distribution Before SMOTE:**")
-            before_smote = Counter(y_train)
-            st.write(f"Class 0: {before_smote[0]}, Class 1: {before_smote[1]}")
+            # Apply upsampling to handle class imbalance
+            st.write("**Class Distribution Before Balancing:**")
+            before_balance = Counter(y_train)
+            st.write(f"Class 0: {before_balance[0]}, Class 1: {before_balance[1]}")
             
             try:
-                smote = SMOTE(random_state=42)
-                X_train_smote, y_train_smote = smote.fit_resample(X_train, y_train)
-                after_smote = Counter(y_train_smote)
-                st.write("**Class Distribution After SMOTE:**")
-                st.write(f"Class 0: {after_smote[0]}, Class 1: {after_smote[1]}")
-                st.write("✅ Applied SMOTE for class balancing")
+                X_train_balanced, y_train_balanced = balance_classes(X_train, y_train)
+                after_balance = Counter(y_train_balanced)
+                st.write("**Class Distribution After Balancing:**")
+                st.write(f"Class 0: {after_balance[0]}, Class 1: {after_balance[1]}")
+                st.write("✅ Applied upsampling for class balancing")
             except Exception as e:
-                st.warning(f"SMOTE failed: {e}. Trying ADASYN instead...")
-                try:
-                    adasyn = ADASYN(random_state=42)
-                    X_train_smote, y_train_smote = adasyn.fit_resample(X_train, y_train)
-                    after_smote = Counter(y_train_smote)
-                    st.write("**Class Distribution After ADASYN:**")
-                    st.write(f"Class 0: {after_smote[0]}, Class 1: {after_smote[1]}")
-                    st.write("✅ Applied ADASYN for class balancing")
-                except Exception as e2:
-                    st.error(f"Both SMOTE and ADASYN failed: {e2}")
-                    st.write("Proceeding without oversampling...")
-                    X_train_smote, y_train_smote = X_train, y_train
+                st.error(f"Error during class balancing: {e}")
+                X_train_balanced, y_train_balanced = X_train.values, y_train.values
             
             # Scale features
             scaler = StandardScaler()
-            X_train_smote = scaler.fit_transform(X_train_smote)
+            X_train_balanced = scaler.fit_transform(X_train_balanced)
             X_test = scaler.transform(X_test)
             st.write("✅ Standardized features using StandardScaler")
         
@@ -195,7 +219,7 @@ if uploaded_file is not None:
                 
                 try:
                     # Train model
-                    model.fit(X_train_smote, y_train_smote)
+                    model.fit(X_train_balanced, y_train_balanced)
                     y_pred = model.predict(X_test)
                     
                     # Evaluation metrics
@@ -226,7 +250,7 @@ if uploaded_file is not None:
                     st.dataframe(report_df)
                     
                     # Cross-validation score
-                    cv_scores = cross_val_score(model, X_train_smote, y_train_smote, cv=5, scoring='f1')
+                    cv_scores = cross_val_score(model, X_train_balanced, y_train_balanced, cv=5, scoring='f1')
                     st.subheader("Cross-Validation Results")
                     st.write(f"**F1 Scores:** {cv_scores}")
                     st.write(f"**Mean CV F1 Score:** {cv_scores.mean():.4f}")
@@ -249,7 +273,7 @@ if uploaded_file is not None:
         else:
             error_checks.append("✅ No duplicate rows in the dataset")
         
-        if X_train_smote.shape[1] != X_test.shape[1]:
+        if X_train_balanced.shape[1] != X_test.shape[1]:
             error_checks.append("❌ Feature mismatch between training and test sets")
         else:
             error_checks.append("✅ No feature mismatch between training and test sets")
