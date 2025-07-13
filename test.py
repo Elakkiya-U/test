@@ -10,7 +10,7 @@ from sklearn.linear_model import LogisticRegression
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.tree import DecisionTreeClassifier
 from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score, confusion_matrix, classification_report
-from imblearn.over_sampling import SMOTE
+from imblearn.over_sampling import SMOTE, ADASYN
 from collections import Counter
 import warnings
 warnings.filterwarnings("ignore")
@@ -147,16 +147,26 @@ if uploaded_file is not None:
             before_smote = Counter(y_train)
             st.write(f"Class 0: {before_smote[0]}, Class 1: {before_smote[1]}")
             
-            smote = SMOTE(random_state=42)
             try:
+                smote = SMOTE(random_state=42)
                 X_train_smote, y_train_smote = smote.fit_resample(X_train, y_train)
                 after_smote = Counter(y_train_smote)
                 st.write("**Class Distribution After SMOTE:**")
                 st.write(f"Class 0: {after_smote[0]}, Class 1: {after_smote[1]}")
                 st.write("✅ Applied SMOTE for class balancing")
-            except ValueError as e:
-                st.error(f"Error during SMOTE: {e}")
-                st.stop()
+            except Exception as e:
+                st.warning(f"SMOTE failed: {e}. Trying ADASYN instead...")
+                try:
+                    adasyn = ADASYN(random_state=42)
+                    X_train_smote, y_train_smote = adasyn.fit_resample(X_train, y_train)
+                    after_smote = Counter(y_train_smote)
+                    st.write("**Class Distribution After ADASYN:**")
+                    st.write(f"Class 0: {after_smote[0]}, Class 1: {after_smote[1]}")
+                    st.write("✅ Applied ADASYN for class balancing")
+                except Exception as e2:
+                    st.error(f"Both SMOTE and ADASYN failed: {e2}")
+                    st.write("Proceeding without oversampling...")
+                    X_train_smote, y_train_smote = X_train, y_train
             
             # Scale features
             scaler = StandardScaler()
